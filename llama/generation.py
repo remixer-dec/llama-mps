@@ -32,9 +32,9 @@ class LLaMA:
 
         total_len = min(params.max_seq_len, max_gen_len + max_prompt_size)
 
-        tokens = torch.full((bsz, total_len), self.tokenizer.pad_id).long()
+        tokens = torch.full((bsz, total_len), self.tokenizer.pad_id).long().to('mps')
         for k, t in enumerate(prompt_tokens):
-            tokens[k, : len(t)] = torch.tensor(t).long()
+            tokens[k, : len(t)] = torch.tensor(t).long().to('mps')
         input_text_mask = tokens != self.tokenizer.pad_id
         start_pos = min_prompt_size
         prev_pos = 0

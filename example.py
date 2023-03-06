@@ -26,7 +26,7 @@ def setup_model_parallel() -> Tuple[int, int]:
     # torch.cuda.set_device(local_rank)
 
     # seed must be the same in all processes
-    torch.manual_seed(1)
+    torch.manual_seed(42)
     return local_rank, world_size
 
 
@@ -54,12 +54,11 @@ def load(
     )
     tokenizer = Tokenizer(model_path=tokenizer_path)
     model_args.vocab_size = tokenizer.n_words
-    # torch.set_default_tensor_type(torch.cuda.HalfTensor)
-    torch.set_default_tensor_type(torch.BFloat16Tensor)
+    torch.set_default_tensor_type(torch.HalfTensor)
     model = Transformer(model_args)
     torch.set_default_tensor_type(torch.FloatTensor)
     model.load_state_dict(checkpoint, strict=False)
-
+    model = model.to('mps')
     generator = LLaMA(model, tokenizer)
     print(f"Loaded in {time.time() - start_time:.2f} seconds")
     return generator
@@ -111,11 +110,12 @@ cheese =>""",
     # results = generator.generate(
     #     prompts, max_gen_len=256, temperature=temperature, top_p=top_p
     # )
-    results = generator.generate(
-        prompts, max_gen_len=512, temperature=temperature, top_p=top_p
-    )
+    results = [generator.generate(
+        [prompt], max_gen_len=32, temperature=temperature, top_p=top_p
+    ) for prompt in prompts]
 
     for result in results:
+        print("\n==================================\n")
         print(result)
         print("\n==================================\n")
 

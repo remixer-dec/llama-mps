@@ -1,13 +1,12 @@
-# LLaMa CPU fork
+# LLaMa MPS fork
 
-This is a fork of https://github.com/facebookresearch/llama to run on CPU.
+This is a fork of https://github.com/markasoftware/llama-cpu which is a fork of https://github.com/facebookresearch/llama. The goal of this fork is to use MPS acceleration on Apple M1/M2 devices.   
+  
+Please check the original repos for installation instructions. After you're done, run this
+ `torchrun example.py --ckpt_dir ../7B  --tokenizer_path ../tokenizer.model --max_batch_size=1` with correct paths to the models. You might need to set up env. variable PYTORCH_ENABLE_MPS_FALLBACK=1  
+   
+This fork is experimental, currently at the stage which allows to run the model with MPS, it might produce different results than the actual model, if you know how to improve something, send a PR.  
 
-Usage and setup is exactly the same:
-1. Create a conda environment (for me I needed Python 3.10 instead of 3.11 because of some pytorch bug?)
-2. `pip install -r requirements.txt`
-3. Torrent the dataset.
-4. Run `torchrun` as described in the upstream readme.
-
-Tested on 7B model. Even with 32GiB of ram, you'll need swap space or zram enabled to load the model (maybe it's doing some conversions?), but once it actually starts doing inference it settles down at a more reasonable <20GiB of ram.
-
-On a Ryzen 7900X, the 7B model is able to infer several words per second, quite a lot better than you'd expect!
+After the model is loaded, inference for 20 tokens/words takes about 3 seconds on a 24-core M1 Max vs 12+ minutes on a CPU (running on a single core). It always goes above 32gb of RAM, writing 2-4gb to ssd on every launch, but consumes less memory after it is loaded.  
+  
+You might notice, that the output of the model often has -1 in tokens and empty/repetitive text. Similar behavior is mentioned [in this guide](https://rentry.org/llama-tard#im-getting-shitty-results), so I am not sure if it is related to issues in the port, try changing the seed and output length to get different results. Any ideas on how to improve it are welcome.
