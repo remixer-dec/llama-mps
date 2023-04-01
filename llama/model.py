@@ -238,24 +238,25 @@ class Transformer(nn.Module):
         self.adapter_layer = params.adapter_layer
 
     @torch.inference_mode()
-    def forward(self, tokens: torch.Tensor, start_pos: int):
+    def forward(self, tokens: torch.Tensor, start_pos: int, use_adapter):
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
         #self.freqs_cis = self.freqs_cis.float().to(h.device)
         freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
-        prompt = self.adapter_query.weight.reshape(self.params.adapter_layer, self.params.adapter_len, self.params.dim).unsqueeze(1)
 
         mask = None
         if seqlen > 1:
             mask = torch.full((1, 1, seqlen, seqlen), float("-inf"), device=torch.device('cpu'))
             mask = torch.triu(mask, diagonal=start_pos + 1).type_as(h)
 
-        for layer in self.layers[: -1 * self.params.adapter_layer]:
+        for layer in (self.layers[: -1 * self.params.adapter_layer]) if use_adapter else self.layers    :
             h = layer(h, start_pos, freqs_cis, (mask.to('mps') if mask is not None else None))
-        layer_index = 0
-        for layer in self.layers[-1 * self.params.adapter_layer:]:
-            h = layer(h, start_pos, freqs_cis, (mask.to('mps') if mask is not None else None), prompt[layer_index])
-            layer_index = layer_index + 1
+        if use_adapter:
+            prompt = self.adapter_query.weight.reshape(self.params.adapter_layer, self.params.adapter_len, self.params.dim).unsqueeze(1)
+            layer_index = 0
+            for layer in self.layers[-1 * self.params.adapter_layer:]:
+                h = layer(h, start_pos, freqs_cis, (mask.to('mps') if mask is not None else None), prompt[layer_index])
+                layer_index = layer_index + 1
         h = self.norm(h)
         output = self.output(h[:, -1, :])  # only compute last logits
         return output.float()

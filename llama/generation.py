@@ -20,6 +20,7 @@ class LLaMA:
         max_gen_len: int,
         temperature: float = 0.8,
         top_p: float = 0.95,
+        use_adapter: bool = True
     ) -> List[str]:
         bsz = len(prompts)
         params = self.model.params
@@ -39,7 +40,7 @@ class LLaMA:
         start_pos = min_prompt_size
         prev_pos = 0
         for cur_pos in range(start_pos, total_len):
-            logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
+            logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos, use_adapter)
             if temperature > 0:
                 probs = torch.softmax(logits / temperature, dim=-1)
                 next_token = sample_top_p(probs, top_p)

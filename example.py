@@ -122,7 +122,7 @@ def main(
 
     with torch.inference_mode(mode=True):
         results = [generator.generate(
-            [prompt], max_gen_len=32, temperature=temperature, top_p=top_p
+            [prompt], max_gen_len=32, temperature=temperature, top_p=top_p, use_adapter=bool(adapter_path)
         ) for prompt in prompts]
 
     for result in results:
