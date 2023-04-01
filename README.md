@@ -1,6 +1,8 @@
 # LLaMa MPS fork
 
 This is a fork of https://github.com/markasoftware/llama-cpu which is a fork of https://github.com/facebookresearch/llama. The goal of this fork is to use GPU acceleration on Apple M1/M2 devices.   
+
+[LLaMa-adapter](https://github.com/ZrrSkywalker/LLaMA-Adapter) support has been added in a separate [branch](https://github.com/remixer-dec/llama-mps/tree/adapter-model)!  
   
 Please check the original repos for installation instructions. After you're done, run this
  `torchrun example.py --ckpt_dir ../7B  --tokenizer_path ../tokenizer.model --max_batch_size=1` with correct paths to the models. You might need to set up env. variable PYTORCH_ENABLE_MPS_FALLBACK=1  
