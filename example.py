@@ -33,6 +33,7 @@ def setup_model_parallel() -> Tuple[int, int]:
 def load(
     ckpt_dir: str,
     tokenizer_path: str,
+    adapter_path: str,
     local_rank: int,
     world_size: int,
     max_seq_len: int,
@@ -45,19 +46,26 @@ def load(
     ), f"Loading a checkpoint for MP={len(checkpoints)} but world size is {world_size}"
     ckpt_path = checkpoints[local_rank]
     print("Loading")
-    checkpoint = torch.load(ckpt_path, map_location="cpu")
+    checkpoint = torch.load(ckpt_path, torch.device("cpu"))
+    if adapter_path:
+        adapter_checkpoint = torch.load(adapter_path, torch.device("cpu"))
     with open(Path(ckpt_dir) / "params.json", "r") as f:
         params = json.loads(f.read())
 
     model_args: ModelArgs = ModelArgs(
         max_seq_len=max_seq_len, max_batch_size=max_batch_size, **params
     )
+    if adapter_path:
+        model_args.adapter_layer = int(adapter_checkpoint['adapter_query.weight'].shape[0] / model_args.adapter_len)
     tokenizer = Tokenizer(model_path=tokenizer_path)
     model_args.vocab_size = tokenizer.n_words
     torch.set_default_tensor_type(torch.HalfTensor)
     model = Transformer(model_args)
-    torch.set_default_tensor_type(torch.FloatTensor)
     model.load_state_dict(checkpoint, strict=False)
+    if adapter_path:
+        model.load_state_dict(adapter_checkpoint, strict=False)
+        del adapter_checkpoint
+    del checkpoint
     model = model.to('mps')
     generator = LLaMA(model, tokenizer)
     print(f"Loaded in {time.time() - start_time:.2f} seconds")
@@ -67,6 +75,7 @@ def load(
 def main(
     ckpt_dir: str,
     tokenizer_path: str,
+    adapter_path: str = None,
     temperature: float = 0.8,
     top_p: float = 0.95,
     max_seq_len: int = 512,
@@ -77,47 +86,49 @@ def main(
         sys.stdout = open(os.devnull, "w")
 
     generator = load(
-        ckpt_dir, tokenizer_path, local_rank, world_size, max_seq_len, max_batch_size
+        ckpt_dir, tokenizer_path, adapter_path, local_rank, world_size, max_seq_len, max_batch_size
     )
 
-    prompts = [
-        # For these prompts, the expected answer is the natural continuation of the prompt
-        "I believe the meaning of life is",
-        "Simply put, the theory of relativity states that ",
-        "Building a website can be done in 10 simple steps:\n",
-        # Few shot prompts: https://huggingface.co/blog/few-shot-learning-gpt-neo-and-inference-api
-        """Tweet: "I hate it when my phone battery dies."
-Sentiment: Negative
-###
-Tweet: "My day has been 👍"
-Sentiment: Positive
-###
-Tweet: "This is the link to the article"
-Sentiment: Neutral
-###
-Tweet: "This new music video was incredibile"
-Sentiment:""",
-        """Translate English to French:
+    PROMPT_DICT = {
+        "prompt_input": (
+            "Below is an instruction that describes a task, paired with an input that provides further context. "
+            "Write a response that appropriately completes the request.\n\n"
+            "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:"
+        ),
+        "prompt_no_input": (
+            "Below is an instruction that describes a task. "
+            "Write a response that appropriately completes the request.\n\n"
+            "### Instruction:\n{instruction}\n\n### Response:"
+        ),
+    }
 
-sea otter => loutre de mer
 
-peppermint => menthe poivrée
-
-plush girafe => girafe peluche
-
-cheese =>""",
+    instructs = [
+        "Tell me about alpacas.",
+        "Tell me about the president of Mexico in 2019.",
+        "Tell me about the king of France in 2019.",
+        "List all Canadian provinces in alphabetical order.",
+        "Write a Python program that prints the first 10 Fibonacci numbers.",
+        "Write a program that prints the numbers from 1 to 100. But for multiples of three print 'Fizz' instead of the number and for the multiples of five print 'Buzz'. For numbers which are multiples of both three and five print 'FizzBuzz'.",
+        "Tell me five words that rhyme with 'shock'.",
+        "Translate the sentence 'I have no mouth but I must scream' into Spanish.",
+        "Count up from 1 to 500."
     ]
+    prompts = [PROMPT_DICT['prompt_no_input'].format_map({'instruction':x, 'input': ''}) for x in instructs]
     # results = generator.generate(
     #     prompts, max_gen_len=256, temperature=temperature, top_p=top_p
     # )
-    results = [generator.generate(
-        [prompt], max_gen_len=32, temperature=temperature, top_p=top_p
-    ) for prompt in prompts]
+    gen_start_time = time.time()
+
+    with torch.inference_mode(mode=True):
+        results = [generator.generate(
+            [prompt], max_gen_len=32, temperature=temperature, top_p=top_p
+        ) for prompt in prompts]
 
     for result in results:
-        print("\n==================================\n")
         print(result)
         print("\n==================================\n")
+    print(f"Generated in {time.time() - gen_start_time:.2f} seconds")
 
 
 if __name__ == "__main__":
