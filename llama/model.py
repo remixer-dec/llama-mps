@@ -117,7 +117,7 @@ class Attention(nn.Module):
         self.cache_v = torch.zeros(
             (args.max_batch_size, args.max_seq_len, self.n_local_heads, self.head_dim)
         ).to('mps')#.cuda()
-        self.gate = torch.nn.Parameter(torch.zeros(1))
+        self.gate = torch.nn.Parameter(torch.zeros(1, self.n_local_heads, 1, 1))
 
     def forward(self, x: torch.Tensor, start_pos: int, freqs_cis: torch.Tensor, mask: Optional[torch.Tensor], adapter=None):
         bsz, seqlen, _ = x.shape

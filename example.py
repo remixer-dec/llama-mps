@@ -59,7 +59,7 @@ def load(
         model_args.adapter_layer = int(adapter_checkpoint['adapter_query.weight'].shape[0] / model_args.adapter_len)
     tokenizer = Tokenizer(model_path=tokenizer_path)
     model_args.vocab_size = tokenizer.n_words
-    torch.set_default_tensor_type(torch.HalfTensor)
+    torch.set_default_dtype(torch.float16)
     model = Transformer(model_args)
     model.load_state_dict(checkpoint, strict=False)
     if adapter_path:
