@@ -6,7 +6,7 @@ from PIL import Image
 import llama
 
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = "mps" if torch.backends.mps.is_available() else "cpu"
 
 llama_dir = "/path/to/LLaMA/"
 
@@ -58,7 +58,7 @@ def create_multi_modal_demo():
         inputs = [img, question, max_len, temp, top_p]
 
         examples = [
-            ["../docs/logo_v1.png", "Please introduce this painting.", 256, 0.1, 0.75],
+            ["cat.jpg", "Which characters are shown on the laptop screen?", 256, 0.1, 0.75],
         ]
 
         gr.Examples(
@@ -87,4 +87,4 @@ with gr.Blocks(css="h1,p {text-align: center;}") as demo:
     with gr.TabItem("Multi-Modal Interaction"):
         create_multi_modal_demo()
 
-demo.queue(api_open=True, concurrency_count=1).launch(share=True)
+demo.queue(api_open=True, concurrency_count=1).launch(share=False)

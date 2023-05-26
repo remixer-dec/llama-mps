@@ -1,6 +1,6 @@
 --extra-index-url https://download.pytorch.org/whl/cu117
-torch==2.0.0+cu117
-torchvision==0.15.1+cu117
+torch==2.0.0
+torchvision==0.15.1
 fairscale
 sentencepiece
 Pillow

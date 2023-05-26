@@ -64,12 +64,12 @@ def apply_rotary_emb(
     xk: torch.Tensor,
     freqs_cis: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
-    xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2))
+    xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2).to('cpu'))
+    xk_ = torch.view_as_complex(xk.float().reshape(*xk.shape[:-1], -1, 2).to('cpu'))
     freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
     xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
     xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(3)
-    return xq_out.type_as(xq), xk_out.type_as(xk)
+    return xq_out.type_as(xq).to('mps'), xk_out.type_as(xk).to('mps')
 
 
 class Attention(nn.Module):
@@ -123,10 +123,10 @@ class Attention(nn.Module):
 
         self.cache_k = torch.zeros(
             (args.max_batch_size, args.max_seq_len, self.n_local_heads, self.head_dim)
-        ).cuda()
+        ).to('mps')
         self.cache_v = torch.zeros(
             (args.max_batch_size, args.max_seq_len, self.n_local_heads, self.head_dim)
-        ).cuda()
+        ).to('mps')
         
         self.gate = torch.nn.Parameter(torch.zeros(1, self.n_local_heads, 1, 1))
 

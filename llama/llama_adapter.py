@@ -30,7 +30,9 @@ class LLaMA_adapter(nn.Module):
                                max_batch_size=max_batch_size, **params)
 
         # 1. clip and clip projector
-        self.clip, self.clip_transform = clip.load(clip_model)
+        torch.set_default_tensor_type(torch.HalfTensor)
+        self.clip, self.clip_transform = clip.load(clip_model, device=torch.device('mps'))
+        self.clip.half()
 
         clip_dim = self.clip.visual.proj.shape[1]
         self.clip_proj = nn.Linear(clip_dim, v_embed_dim)
@@ -59,9 +61,9 @@ class LLaMA_adapter(nn.Module):
         model_args.w_bias = w_bias
         model_args.w_lora = w_lora
         model_args.lora_rank = lora_rank
-        torch.set_default_tensor_type(torch.cuda.HalfTensor)
+
+        torch.set_default_dtype(torch.float16)
         self.llama = Transformer(model_args)
-        torch.set_default_tensor_type(torch.FloatTensor)
 
         ckpts = sorted(Path(llama_ckpt_dir).glob("*.pth"))
         for ckpt in ckpts:
@@ -93,7 +95,7 @@ class LLaMA_adapter(nn.Module):
 
     def forward_visual(self, imgs):
         clip_feats = self.clip_encode_image(imgs)
-        clip_feats = self.clip_proj_norm(self.clip_proj(clip_feats.float()))
+        clip_feats = self.clip_proj_norm(self.clip_proj(clip_feats.half()))
 
         visual_query = self.visual_query.weight.unsqueeze(
             0).repeat(len(imgs), 1, 1)
@@ -111,15 +113,15 @@ class LLaMA_adapter(nn.Module):
     def forward(self, visual_query, tokens, start_pos: int):
         _bsz, seqlen = tokens.shape
         h = self.llama.tok_embeddings(tokens)
-        freqs_cis = self.llama.freqs_cis.to(h.device)
+        freqs_cis = self.llama.freqs_cis#.to(h.device)
         freqs_cis = freqs_cis[start_pos : start_pos + seqlen]
         mask = None
         mask = torch.full((1, 1, seqlen, seqlen),
-                          float("-inf"), device=h.device)
+                          float("-inf"), device=torch.device('cpu'))
         mask = torch.triu(mask, diagonal=start_pos + 1).type_as(h)
 
         for layer in self.llama.layers[:-1 * self.query_layer]:
-            h = layer(h, start_pos, freqs_cis, mask)
+            h = layer(h, start_pos, freqs_cis, mask.to('mps') if mask is not None else None)
 
         adapter = self.adapter_query.weight.reshape(
             self.query_layer, self.query_len, -1).unsqueeze(1)
@@ -133,7 +135,7 @@ class LLaMA_adapter(nn.Module):
         h = self.llama.norm(h)
         output = self.llama.output(h[:, -1, :])
 
-        return output.float()
+        return output.half()
 
     @torch.inference_mode()
     def generate(
@@ -147,8 +149,7 @@ class LLaMA_adapter(nn.Module):
         assert bsz <= params.max_batch_size, (bsz, params.max_batch_size)
         assert len(imgs) == len(prompts)
 
-        with torch.cuda.amp.autocast():
-            visual_query = self.forward_visual(imgs)
+        visual_query = self.forward_visual(imgs)
 
         if isinstance(prompts[0], str):
             prompts = [self.tokenizer.encode(
@@ -160,16 +161,15 @@ class LLaMA_adapter(nn.Module):
         total_len = min(params.max_seq_len, max_gen_len + max_prompt_size)
 
         tokens = torch.full(
-            (bsz, total_len), self.tokenizer.pad_id).cuda().long()
+            (bsz, total_len), self.tokenizer.pad_id).long().to('mps')
 
         for k, t in enumerate(prompts):
-            tokens[k, : len(t)] = torch.tensor(t).cuda().long()
+            tokens[k, : len(t)] = torch.tensor(t).long().to('mps')
         input_text_mask = tokens != self.tokenizer.pad_id
         start_pos = min_prompt_size
         prev_pos = 0
         for cur_pos in range(start_pos, total_len):
-            with torch.cuda.amp.autocast():
-                logits = self.forward(visual_query, tokens[:, prev_pos:cur_pos], prev_pos)
+            logits = self.forward(visual_query, tokens[:, prev_pos:cur_pos], prev_pos)
             if temperature > 0:
                 probs = torch.softmax(logits / temperature, dim=-1)
                 next_token = sample_top_p(probs, top_p)
@@ -210,7 +210,7 @@ _MODELS = {
 def available_models():
     return list(_MODELS.keys())
 
-def load(name, llama_dir, device="cuda" if torch.cuda.is_available() else "cpu", download_root='ckpts'):
+def load(name, llama_dir, device="mps" if torch.backends.mps.is_available() else "cpu", download_root='ckpts'):
     if name in _MODELS:
         model_path = _download(_MODELS[name], download_root)
     elif os.path.isfile(name):
