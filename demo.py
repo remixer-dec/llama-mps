@@ -16,8 +16,18 @@ img = preprocess(img).unsqueeze(0).half().to(device)
 result = model.generate(img, [prompt])[0]
 
 print(result)
-
+# use llama with visual input and adapter
 prompt = llama.format_prompt('Describe this image.')
 result = model.generate(img, [prompt])[0]
+
+print(result)
+# use llama with adapter without visual input
+prompt = llama.format_prompt('Give me a random number')
+result = model.generate([], [prompt])[0]
+
+print(result)
+# use llama without visual model and adapter (useful for not alpaca-formatted tasks)
+prompt = llama.format_prompt('Give me a random number')
+result = model.generate([], [prompt], use_adapter=False)[0]
 
 print(result)

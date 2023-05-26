@@ -94,6 +94,8 @@ class LLaMA_adapter(nn.Module):
         return x
 
     def forward_visual(self, imgs):
+        if type(imgs) is not torch.Tensor:
+            return None
         clip_feats = self.clip_encode_image(imgs)
         clip_feats = self.clip_proj_norm(self.clip_proj(clip_feats.half()))
 
@@ -110,7 +112,7 @@ class LLaMA_adapter(nn.Module):
         return visual_query
 
     @torch.inference_mode()
-    def forward(self, visual_query, tokens, start_pos: int):
+    def forward(self, visual_query, tokens, start_pos: int, use_adapter):
         _bsz, seqlen = tokens.shape
         h = self.llama.tok_embeddings(tokens)
         freqs_cis = self.llama.freqs_cis#.to(h.device)
@@ -120,17 +122,19 @@ class LLaMA_adapter(nn.Module):
                           float("-inf"), device=torch.device('cpu'))
         mask = torch.triu(mask, diagonal=start_pos + 1).type_as(h)
 
-        for layer in self.llama.layers[:-1 * self.query_layer]:
+        for layer in (self.llama.layers[:-1 * self.query_layer] if use_adapter else self.llama.layers):
             h = layer(h, start_pos, freqs_cis, mask.to('mps') if mask is not None else None)
 
-        adapter = self.adapter_query.weight.reshape(
-            self.query_layer, self.query_len, -1).unsqueeze(1)
-        adapter_index = 0
-        for layer in self.llama.layers[-1 * self.query_layer:]:
-            dynamic_adapter = adapter[adapter_index].repeat(_bsz, 1, 1)
-            dynamic_adapter = dynamic_adapter + visual_query
-            h = layer(h, start_pos, freqs_cis, mask, dynamic_adapter)
-            adapter_index = adapter_index + 1
+        if use_adapter:
+            adapter = self.adapter_query.weight.reshape(
+                self.query_layer, self.query_len, -1).unsqueeze(1)
+            adapter_index = 0
+            for layer in self.llama.layers[-1 * self.query_layer:]:
+                dynamic_adapter = adapter[adapter_index].repeat(_bsz, 1, 1)
+                if visual_query is not None:
+                    dynamic_adapter = dynamic_adapter + visual_query
+                h = layer(h, start_pos, freqs_cis, mask, dynamic_adapter)
+                adapter_index = adapter_index + 1
 
         h = self.llama.norm(h)
         output = self.llama.output(h[:, -1, :])
@@ -139,15 +143,18 @@ class LLaMA_adapter(nn.Module):
 
     @torch.inference_mode()
     def generate(
-        self, imgs, prompts,
+        self, imgs=None, prompts=None,
         max_gen_len: int = 256,
         temperature: float = 0.1,
         top_p: float = 0.75,
+        use_adapter: bool = True
     ):
-        bsz = len(imgs)
+        use_visual_input = type(imgs) is torch.Tensor
+        bsz = len(imgs) if use_visual_input else len(prompts)
         params = self.llama.params
         assert bsz <= params.max_batch_size, (bsz, params.max_batch_size)
-        assert len(imgs) == len(prompts)
+        if use_visual_input:
+            assert len(imgs) == len(prompts)
 
         visual_query = self.forward_visual(imgs)
 
@@ -169,7 +176,7 @@ class LLaMA_adapter(nn.Module):
         start_pos = min_prompt_size
         prev_pos = 0
         for cur_pos in range(start_pos, total_len):
-            logits = self.forward(visual_query, tokens[:, prev_pos:cur_pos], prev_pos)
+            logits = self.forward(visual_query, tokens[:, prev_pos:cur_pos], prev_pos, use_adapter)
             if temperature > 0:
                 probs = torch.softmax(logits / temperature, dim=-1)
                 next_token = sample_top_p(probs, top_p)
