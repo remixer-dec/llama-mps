@@ -13,13 +13,15 @@ def main(
     top_p: float = 0.9,
     max_seq_len: int = 128,
     max_gen_len: int = 64,
-    max_batch_size: int = 4,
+    max_batch_size: int = 1,
+    weights_in_float16 = False,
 ):
     generator = Llama.build(
         ckpt_dir=ckpt_dir,
         tokenizer_path=tokenizer_path,
         max_seq_len=max_seq_len,
         max_batch_size=max_batch_size,
+        weights_in_float16=weights_in_float16
     )
 
     prompts = [
@@ -39,15 +41,15 @@ def main(
         plush girafe => girafe peluche
         cheese =>""",
     ]
-    results = generator.text_completion(
-        prompts,
+    results = [generator.text_completion(
+        [prompt],
         max_gen_len=max_gen_len,
         temperature=temperature,
         top_p=top_p,
-    )
+    ) for prompt in prompts]
     for prompt, result in zip(prompts, results):
         print(prompt)
-        print(f"> {result['generation']}")
+        print(f"> {result[0]['generation']}")
         print("\n==================================\n")
 
 

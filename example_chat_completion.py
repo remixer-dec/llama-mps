@@ -16,12 +16,14 @@ def main(
     max_seq_len: int = 512,
     max_batch_size: int = 8,
     max_gen_len: Optional[int] = None,
+    weights_in_float16: Optional[bool] = False
 ):
     generator = Llama.build(
         ckpt_dir=ckpt_dir,
         tokenizer_path=tokenizer_path,
         max_seq_len=max_seq_len,
         max_batch_size=max_batch_size,
+        weights_in_float16=weights_in_float16
     )
 
     dialogs = [
@@ -69,18 +71,18 @@ If a question does not make any sense, or is not factually coherent, explain why
             }
         ],
     ]
-    results = generator.chat_completion(
-        dialogs,  # type: ignore
+    results = [generator.chat_completion(
+        [d],  # type: ignore
         max_gen_len=max_gen_len,
         temperature=temperature,
         top_p=top_p,
-    )
+    ) for d in dialogs]
 
     for dialog, result in zip(dialogs, results):
         for msg in dialog:
             print(f"{msg['role'].capitalize()}: {msg['content']}\n")
         print(
-            f"> {result['generation']['role'].capitalize()}: {result['generation']['content']}"
+            f"> {result[0]['generation']['role'].capitalize()}: {result[0]['generation']['content']}"
         )
         print("\n==================================\n")
 
